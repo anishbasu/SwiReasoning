@@ -8,7 +8,7 @@
         <img alt="ArXiv" src="https://img.shields.io/badge/arXiv-2510.05069-B31B1B?logo=arxiv" />
     </a>
     <a href="https://swireasoning.github.io/">
-        <img alt="Website" src="https://img.shields.io/badge/website-555555?logo=googlechrome" />
+        <img alt="Website" src="https://img.shields.io/badge/swireasoning.github.io-555555?logo=homepage&label=Website" />
     </a><br>
 </p>
 
@@ -30,7 +30,7 @@ Comparison of solving the same question with the same reasoning LLM (6s vs. 1min
 
 ## 🔍 Supported Models
 
-* Qwen3 and DeepSeek-R1 model families across 1.7B to 32B
+* Qwen3, Qwen3.5, and DeepSeek-R1 model families
 
 ## ⚙️ Getting Started
 
@@ -45,6 +45,7 @@ cd SwiReasoning
 conda create -n swir python=3.12
 conda activate swir
 pip install -r requirements.txt
+pip install transformers==5.7.0 # Only for Qwen3.5 support
 ```
 
 ## 💻 Interactive Chat

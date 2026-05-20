@@ -39,6 +39,72 @@ def apply_sampling_filter(logits, top_k=0, top_p=1.0, min_p=0.0):
     return logits
 
 
+def _select_tensor_batch(value, indices):
+    if value is None or not isinstance(value, torch.Tensor) or value.ndim == 0:
+        return value
+    return value.index_select(0, indices.to(value.device))
+
+
+def _batch_select_cache_layer(layer, indices):
+    has_linear_states = hasattr(layer, "conv_states") or hasattr(layer, "recurrent_states")
+    if has_linear_states and hasattr(layer, "reorder_cache"):
+        layer.reorder_cache(indices)
+    elif hasattr(layer, "batch_select_indices"):
+        layer.batch_select_indices(indices)
+    elif hasattr(layer, "reorder_cache"):
+        layer.reorder_cache(indices)
+    else:
+        for attr in ("keys", "values", "conv_states", "recurrent_states"):
+            value = getattr(layer, attr, None)
+            if isinstance(value, torch.Tensor):
+                setattr(layer, attr, _select_tensor_batch(value, indices))
+
+    if hasattr(layer, "max_batch_size"):
+        try:
+            layer.max_batch_size = int(indices.numel())
+        except Exception:
+            pass
+
+
+def _needs_layerwise_batch_select(past_key_values):
+    layers = getattr(past_key_values, "layers", None)
+    if layers is None:
+        return False
+    for layer in layers:
+        has_linear_states = hasattr(layer, "conv_states") or hasattr(layer, "recurrent_states")
+        if has_linear_states or not hasattr(layer, "batch_select_indices"):
+            return True
+    return False
+
+
+def batch_select_hybrid_cache(past_key_values, indices):
+    if past_key_values is None:
+        return past_key_values
+
+    if hasattr(past_key_values, "batch_select_indices") and not _needs_layerwise_batch_select(past_key_values):
+        past_key_values.batch_select_indices(indices)
+        return past_key_values
+
+    if hasattr(past_key_values, "layers"):
+        for layer in past_key_values.layers:
+            _batch_select_cache_layer(layer, indices)
+        return past_key_values
+
+    if hasattr(past_key_values, "batch_select_indices"):
+        past_key_values.batch_select_indices(indices)
+        return past_key_values
+
+    if isinstance(past_key_values, tuple):
+        selected_layers = []
+        for layer in past_key_values:
+            if isinstance(layer, tuple):
+                selected_layers.append(tuple(_select_tensor_batch(v, indices) for v in layer))
+            else:
+                selected_layers.append(_select_tensor_batch(layer, indices))
+        return tuple(selected_layers)
+    return past_key_values
+
+
 def get_math_symbols_ids(tokenizer):
     math_symbols = [
         "+", "-", "*", "/", "^", "=", "<", ">", "\\leq", "\\geq", "\\neq", "\\approx", "\\sim", "\\equiv", "\\to", "\\implies", "\\iff",
@@ -139,8 +205,7 @@ def generate_cot(model, tokenizer, **kwargs):
         attention_mask = attention_mask[keep_idx]
         attn_mask = attn_mask[keep_idx]
         keep_idx_tensor = keep_idx if isinstance(keep_idx, torch.Tensor) else torch.tensor(keep_idx, dtype=torch.long, device=generated.device)
-        if hasattr(past_key_values, "batch_select_indices"):
-            past_key_values.batch_select_indices(keep_idx_tensor)
+        past_key_values = batch_select_hybrid_cache(past_key_values, keep_idx_tensor)
 
     maxlen = max(len(g) for g in all_generated)
     out = torch.full((batch_size, maxlen), tokenizer.pad_token_id or 0, dtype=torch.long, device=device)
@@ -328,9 +393,8 @@ def generate_swir(model, tokenizer, **kwargs):
         mode_stay_steps = mode_stay_steps[keep_idx]
         cur_ref_entropy = cur_ref_entropy[keep_idx]
         locked_normal_mask = locked_normal_mask[keep_idx]
-        if hasattr(past_key_values, "batch_select_indices"):
-            keep_idx_tensor = keep_idx if isinstance(keep_idx, torch.Tensor) else torch.tensor(keep_idx, dtype=torch.long, device=device)
-            past_key_values.batch_select_indices(keep_idx_tensor)
+        keep_idx_tensor = keep_idx if isinstance(keep_idx, torch.Tensor) else torch.tensor(keep_idx, dtype=torch.long, device=device)
+        past_key_values = batch_select_hybrid_cache(past_key_values, keep_idx_tensor)
         if max_switch_count is not None:
             switch_count = switch_count[keep_idx]
             injecting = injecting[keep_idx]
