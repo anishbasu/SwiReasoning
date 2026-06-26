@@ -239,6 +239,7 @@ def generate_swir(model, tokenizer, **kwargs):
     convergence_words      = kwargs.get("convergence_words", "</think>")
     termination_words      = kwargs.get("termination_words", "</think>\n\nThe final answer is")
     termination_max_tokens = kwargs.pop("termination_max_tokens", 32)
+    gumbel_softmax_tau     = kwargs.pop("gumbel_softmax_tau", 0.0)
 
     stream_callback       = kwargs.pop("stream_callback", None)
 
@@ -336,7 +337,11 @@ def generate_swir(model, tokenizer, **kwargs):
         is_soft = ~is_normal
         
         normal_emb = E[next_tokens]
-        soft_emb = torch.matmul(probs_original, E)
+        if gumbel_softmax_tau > 0:
+            soft_probs = F.gumbel_softmax(logits_original, tau=gumbel_softmax_tau, dim=-1)
+        else:
+            soft_probs = probs_original
+        soft_emb = torch.matmul(soft_probs, E)
 
         alpha = alpha_0 + (1 - alpha_0) * float(step) / float(max_new_tokens)
         if step == 0:

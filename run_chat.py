@@ -51,6 +51,7 @@ def main(args):
         "min_p": args.min_p,
         "do_sample": args.do_sample,
         "max_new_tokens": args.max_new_tokens,
+        "gumbel_softmax_tau": args.gumbel_tau,
     }
 
     print(f"\n[Info] Model loaded on {device}")
@@ -101,6 +102,8 @@ def main(args):
         print(f"{args.model_name} > ", end="", flush=True)
         
         content = ""
+        num_tokens = 0
+        is_thinking = False
         if args.method in ["cot", "cot_greedy"]:
             streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
             if args.method == "cot_greedy":
@@ -120,12 +123,20 @@ def main(args):
         else:
             def _stream_cb(new_ids: str):
                 nonlocal content
+                nonlocal num_tokens
+                nonlocal is_thinking
                 new_text = tokenizer.decode(
                     new_ids,
                     skip_special_tokens=True,
                     clean_up_tokenization_spaces=False,
                 )
                 content += new_text
+                if "<think>" in new_text:
+                    is_thinking = True
+                if "</think>" in new_text:
+                    is_thinking = False
+                if is_thinking:
+                    num_tokens += 1
                 print(new_text, end="", flush=True)
             model_inputs["alpha_0"] = args.alpha
             model_inputs["max_switch_count"] = args.max_switch_count
@@ -145,7 +156,7 @@ def main(args):
             RESET, BOLD, FG_W, BG_M = "\033[0m", "\033[1m", "\033[97m", "\033[45m" 
             def display_final_answer(text):
                 print()
-                print(f"{BOLD}{FG_W}{BG_M}[Final Answer]: {text}{RESET}")
+                print(f"{BOLD}{FG_W}{BG_M}[Final Answer]: {text}, [Num Tokens]: {num_tokens}{RESET}")
                 print()
             display_final_answer(answer)
 
@@ -158,6 +169,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--gumbel_tau", type=float, default=0.0)
     parser.add_argument("--model_name", type=str, default="Qwen/Qwen3-8B")
     parser.add_argument("--temperature", type=float, default=0.6)
     parser.add_argument("--top_p", type=float, default=0.95)

@@ -154,6 +154,7 @@ def main(args):
         "min_p": args.min_p,
         "do_sample": args.do_sample,
         "max_new_tokens": args.max_new_tokens,
+        "gumbel_softmax_tau": args.gumbel_tau,
     }
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -177,7 +178,7 @@ def main(args):
     )
     
     if dataset_name == "gsm8k":
-        dataset = load_dataset("gsm8k", "main", split="test")
+        dataset = load_dataset("openai/gsm8k", "main", split="test")
     elif dataset_name == "math500":
         dataset = load_dataset("HuggingFaceH4/MATH-500", split="test")
     elif dataset_name == "aime_2024":
@@ -568,6 +569,7 @@ def main(args):
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
     parser.add_argument('--model_name', type=str, default="Qwen/Qwen3-8B")
+    parser.add_argument("--gumbel_tau", type=float, default=0.0)
     parser.add_argument('--dataset_name', type=str, default="gsm8k")
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--n_samples', type=int, default=None) 
